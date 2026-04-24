@@ -121,3 +121,51 @@ the Airbyte UI as the connection description.
 Override `model_json_schema()` in `build_spec()` to `pop("description", None)` from
 the schema before returning it, keeping field-level descriptions (which are useful)
 while dropping the class-level one (which is implementation noise).
+
+---
+
+## KB-006 — HTTP 429 during API reads is not retried
+
+**Severity**: Medium (could cause sync failures on large accounts)  
+**Introduced**: Step 5 (Activities stream)  
+**Target fix**: After Step 7 (Entrypoint) — add a shared retry decorator
+
+### Description
+`GarminAuth._login_with_retry()` retries on HTTP 429 for the login step only.
+API read calls (`client.get_activities_by_date()`, etc.) can also return 429 if
+too many requests are made in a short window — this is especially likely on first
+sync of a large account with years of history. Currently the exception propagates
+uncaught and the entire sync fails.
+
+### Fix plan
+Extract the retry logic from `GarminAuth` into a reusable utility function (e.g.
+`source_garmin/utils.py: retry_on_429(fn, delays)`). Wrap each Garmin API call in
+`read_records()` with this utility.
+
+### Affected files
+- `source_garmin/streams/activities.py` — `read_records()` API call
+- `source_garmin/streams/daily_health.py` — same (Step 10)
+- `source_garmin/streams/calendar_events.py` — same (Step 11)
+- `source_garmin/auth.py` — refactor to use shared utility
+
+---
+
+## KB-007 — `avg_cadence` is populated only for running activities
+
+**Severity**: Low (expected null for non-running sports)  
+**Introduced**: Step 5 (Activities stream)  
+**Target fix**: Post-Step 11 enhancement, if needed
+
+### Description
+The raw Garmin field `averageRunningCadenceInStepsPerMinute` is sport-specific —
+it is only populated for running activities. For cycling, swimming, or strength
+training, this field is absent from the API response and `avg_cadence` will always
+be `None`.
+
+Garmin exposes cycling cadence under a different field name
+(`averageBikingCadenceInRevPerMinute`), which is not currently mapped.
+
+### Fix plan
+If multi-sport cadence support is needed, add a helper in `_normalize_raw()` that
+checks the `activityType.typeKey` and reads the appropriate cadence field. For now,
+`None` is the correct and documented behaviour for non-running activities.

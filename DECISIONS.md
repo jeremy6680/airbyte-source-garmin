@@ -261,3 +261,67 @@ by the `read()` method which calls `date.today()` once at the top of the run.
   time-dependent flakiness.
 - `date.today()` is called exactly once per sync run, which is the correct
   behaviour — all streams in a single run share the same reference date.
+
+---
+
+## ADR-012 — pandas for field transformation even on small datasets
+
+**Status**: Accepted  
+**Step**: 5 (Activities stream)
+
+### Context
+The activities stream receives a list of raw Garmin dicts and needs to apply unit
+conversions and sanity checks. Plain Python dict comprehensions could do this just
+as well for a dataset of hundreds of rows.
+
+### Decision
+Load the raw list into a pandas DataFrame, apply transformations column by column,
+then yield row by row.
+
+### Reasons
+1. **CLAUDE.md mandate** — the spec explicitly requires pandas for all data
+   manipulation.
+2. **Column-wise operations are the pandas idiom** — applying a conversion to an
+   entire column at once (`df["distance_km"] = df["distance_m"] / 1000`) is both
+   more readable and more representative of real ETL work than looping over dicts.
+3. **Null handling** — pandas provides `pd.notna()`, `errors="coerce"` in
+   `pd.to_datetime()`, and nullable dtypes (`pd.Int64Dtype()`), which turn what
+   would be defensive try/except boilerplate in plain Python into a declarative
+   one-liner.
+
+### Trade-offs
+- Introduces a pandas import for what could be a pure-Python transformation.
+  Acceptable given the explicit project constraint and the pedagogical value.
+
+---
+
+## ADR-013 — `pd.Int64Dtype()` for nullable integer columns
+
+**Status**: Accepted  
+**Step**: 5 (Activities stream)
+
+### Context
+pandas represents missing values as `NaN`, which is a float. When a column has
+type `int64` and contains even one `NaN`, pandas silently upcasts the entire column
+to `float64` — so `activity_id=12345678` becomes `12345678.0` in the output dict.
+The JSON schema declares these fields as `"type": ["integer", "null"]`, so floats
+are incorrect.
+
+### Decision
+Cast integer columns that may contain nulls (`activity_id`, `avg_heart_rate`,
+`max_heart_rate`, `calories`) to `pd.Int64Dtype()` (pandas nullable integer) after
+all transformations are applied.
+
+### Reasons
+- `pd.Int64Dtype()` stores genuine integers alongside `pd.NA` (not `NaN`), so
+  `.to_dict()` yields `12345678` (int) and `None`, never `12345678.0` (float).
+- This matches the JSON Schema declaration and avoids type mismatches at the
+  destination (e.g. BigQuery would reject `158.0` for an INT64 column).
+
+### How to spot the bug without this fix
+```python
+# Without pd.Int64Dtype():
+df["avg_heart_rate"] = df["avg_hr_raw"].apply(lambda v: int(v) if v else None)
+# → column dtype becomes float64 because NaN forces the upcast
+# → to_dict() returns 158.0 instead of 158
+```
