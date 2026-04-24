@@ -1,0 +1,86 @@
+# =============================================================================
+# CREDENTIALS & SECRETS — NEVER COMMIT
+# =============================================================================
+secrets/
+.env
+.env.local
+*.pem
+*.key
+
+# Garmin session token (contient des tokens OAuth sérialisés)
+garmin_session.json
+*.session.json
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Tests & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# =============================================================================
+# AIRBYTE SPÉCIFIQUE
+# =============================================================================
+# Fichiers de config locaux avec vrais credentials
+secrets/config.json
+secrets/catalog.json
+
+# Output des commandes read (peut contenir des données de santé personnelles)
+output/
+*.jsonl
+
+# Cache Airbyte
+.airbyte/
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+# Ne pas committer les images buildées localement
+*.tar
+
+# =============================================================================
+# OS
+# =============================================================================
+.DS_Store
+Thumbs.db
+*~
+
+# =============================================================================
+# IDE
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+
+# =============================================================================
+# LOGS
+# =============================================================================
+*.log
+logs/
+
+# =============================================================================
+# EXCEPTIONS — GARDER CES FICHIERS
+# =============================================================================
+# Le dossier secrets doit exister mais être vide (sauf .gitkeep)
+!secrets/.gitkeep
+
+# Les fixtures de test sont des données fictives — OK à committer
+!unit_tests/fixtures/
+!integration_tests/sample_files/
