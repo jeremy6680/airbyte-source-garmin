@@ -439,3 +439,41 @@ that follow the protocol strictly.
 Contrast this with `read`, where a fatal exception does warrant `sys.exit(1)`,
 because an incomplete read with exit code 0 would falsely appear as a successful
 sync in the Airbyte UI.
+
+---
+
+## ADR-018 — Unit tests mock at the network boundary only
+
+**Status**: Accepted  
+**Step**: 8 (Unit tests)
+
+### Context
+Unit tests for streams need to avoid real Garmin API calls. The question is *how
+deep* to mock: you could mock `garminconnect.Garmin`, or you could go further and
+mock individual methods inside the stream classes (e.g. `_transform()`,
+`_normalize_raw()`), or you could mock pandas itself.
+
+### Decision
+Mock only `garminconnect.Garmin` (the external network boundary). All
+transformation logic — `_normalize_raw()`, `_transform()`, `_check_hr()`,
+`_speed_to_pace()`, etc. — runs for real against fixture data.
+
+### Reasons
+1. **Tests catch real bugs** — the most common bugs in a connector live in field
+   mapping, unit conversions, and sanity checks. If those methods are mocked out,
+   the tests verify nothing meaningful.
+2. **Fixture JSON files as living documentation** — fixture files in
+   `unit_tests/fixtures/` mirror the real Garmin API response shape. When the
+   real API changes, the fixtures can be updated from a real response and the
+   tests will immediately reveal which transformations break.
+3. **Transformation code is pure** — `_transform()` takes a DataFrame and returns
+   a DataFrame with no side effects. Pure functions are trivial to test without
+   mocking by just passing real DataFrames built from fixture data.
+
+### Trade-offs
+- Tests are slightly slower than if all logic were mocked (a pandas DataFrame is
+  created per test). In practice the suite runs in under one second for the
+  current volume of tests.
+- If `garminconnect.Garmin`'s interface changes (e.g. a renamed method), the mock
+  will silently continue to pass. Integration tests (Step 9+) are the backstop
+  for this class of regression.

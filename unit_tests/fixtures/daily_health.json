@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "calendarDate": "2024-01-15",
+    "totalSteps": 9823,
+    "restingHeartRate": 52,
+    "lastNight": {
+      "averageSpO2HRVStatus": null,
+      "avgSleepStress": 18,
+      "sleepTimeSeconds": 27900,
+      "deepSleepSeconds": 5400
+    },
+    "averageStressLevel": 32,
+    "bodyBatteryChargedValue": 55,
+    "bodyBatteryDrainedValue": 42,
+    "activeKilocalories": 480,
+    "hrvWeeklyAverage": 68.5
+  },
+  {
+    "calendarDate": "2024-01-16",
+    "totalSteps": 4100,
+    "restingHeartRate": null,
+    "lastNight": null,
+    "averageStressLevel": null,
+    "bodyBatteryChargedValue": null,
+    "bodyBatteryDrainedValue": null,
+    "activeKilocalories": null,
+    "hrvWeeklyAverage": null
+  }
+]

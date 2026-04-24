@@ -169,3 +169,68 @@ Garmin exposes cycling cadence under a different field name
 If multi-sport cadence support is needed, add a helper in `_normalize_raw()` that
 checks the `activityType.typeKey` and reads the appropriate cadence field. For now,
 `None` is the correct and documented behaviour for non-running activities.
+
+---
+
+## KB-008 — `GarminStream.read()` emits STATE in `full_refresh` mode
+
+**Severity**: Low (protocol inconsistency, no data loss)  
+**Introduced**: Step 4 (Base stream)  
+**Target fix**: Step 12 (Incremental state management review)
+
+### Description
+`GarminStream.read()` emits a `STATE` message whenever records are fetched and
+`cursor_field` is set — regardless of the `sync_mode` argument:
+
+```python
+# base.py — the condition does not check sync_mode
+if self.cursor_field and latest_cursor:
+    yield self._make_state_message({self.cursor_field: latest_cursor})
+```
+
+For a `full_refresh` run this is technically unnecessary: Airbyte's full-refresh
+mode replaces the destination table entirely and does not use saved state. Emitting
+STATE here does not cause incorrect data, but it pollutes the output stream with a
+message that carries no useful information in this sync mode.
+
+This is documented in `unit_tests/test_streams.py` in the
+`test_no_state_emitted_for_full_refresh` test, which currently accepts the current
+behaviour rather than asserting that STATE must be absent.
+
+### Fix plan
+Guard the final STATE emit with a `sync_mode == "incremental"` check in
+`GarminStream.read()`. Update the test to assert that `full_refresh` produces no
+STATE messages.
+
+### Affected files
+- `source_garmin/streams/base.py` — add sync_mode guard to the STATE emit
+- `unit_tests/test_streams.py` — tighten the `test_no_state_emitted_for_full_refresh` assertion
+
+---
+
+## KB-009 — Virtual environment uses Python 3.14, not Python 3.11
+
+**Severity**: Low (no current failures, but a latent risk)  
+**Introduced**: Step 1 (Setup) — venv created before constraint was enforced  
+**Target fix**: Whenever a clean environment is set up (Docker build covers this)
+
+### Description
+CLAUDE.md mandates Python 3.11. The `.venv` in the project root was created with
+the Homebrew default (`python3`, currently 3.14). All 53 unit tests pass, but:
+
+- Any package that ships a compiled `.so` extension (e.g. numpy, pandas internals)
+  will use the 3.14 ABI, not the 3.11 ABI. Behaviour differences between minor
+  versions could produce false-positive test results for version-specific edge
+  cases.
+- The Docker image (`FROM python:3.11-slim`) uses 3.11. If a 3.14 behaviour
+  difference ever causes a connector to behave differently locally vs. in Docker,
+  this mismatch is the first thing to investigate.
+
+### Fix plan
+Recreate the venv with an explicit Python 3.11 binary:
+```bash
+python3.11 -m venv .venv   # requires pyenv or homebrew python@3.11
+pip install -r requirements-dev.txt
+```
+The Docker build is unaffected (it pins `python:3.11-slim`), so this is a local
+developer environment concern only.

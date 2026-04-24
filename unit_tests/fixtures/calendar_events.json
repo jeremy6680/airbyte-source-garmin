@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "id": 98765,
+    "title": "Paris Marathon",
+    "date": "2024-04-07",
+    "eventType": "race",
+    "distance": 42.195,
+    "location": "Paris, France",
+    "url": "https://www.schneiderelectricparismarathon.com"
+  },
+  {
+    "id": 98766,
+    "title": "Sunday Long Run",
+    "date": "2024-01-21",
+    "eventType": "training",
+    "distance": null,
+    "location": null,
+    "url": null
+  }
+]

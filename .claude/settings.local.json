@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(.venv/bin/python3 -c ' *)",
-      "Bash(.venv/bin/python3 -m py_compile source_garmin/auth.py)"
+      "Bash(.venv/bin/python3 -m py_compile source_garmin/auth.py)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -m pytest unit_tests/ -v)"
     ]
   }
 }
