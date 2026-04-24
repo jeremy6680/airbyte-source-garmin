@@ -325,3 +325,62 @@ df["avg_heart_rate"] = df["avg_hr_raw"].apply(lambda v: int(v) if v else None)
 # → column dtype becomes float64 because NaN forces the upcast
 # → to_dict() returns 158.0 instead of 158
 ```
+
+---
+
+## ADR-014 — `yield from stream.read()` to delegate generators in `source.py`
+
+**Status**: Accepted  
+**Step**: 6 (Main source)
+
+### Context
+`SourceGarmin.read()` needs to forward every message produced by each stream's
+`read()` generator to its own caller (ultimately `main.py`).
+
+### Decision
+Use `yield from stream.read(...)` instead of an explicit loop.
+
+### Reasons
+`yield from` is Python's generator delegation syntax — it transparently forwards
+every value yielded by the inner generator, propagates exceptions, and handles
+`send()` / `throw()` correctly. The explicit alternative:
+
+```python
+for message in stream.read(...):
+    yield message
+```
+
+is functionally equivalent but slightly more verbose and slightly less efficient
+(each value crosses an extra stack frame). `yield from` signals intent clearly:
+"this function is a pass-through generator for this sub-generator".
+
+---
+
+## ADR-015 — Single auth client per run, shared across all streams
+
+**Status**: Accepted  
+**Step**: 6 (Main source)
+
+### Context
+`SourceGarmin.read()` iterates over multiple streams. Each stream could
+instantiate its own `GarminAuth` and authenticate independently.
+
+### Decision
+`GarminAuth` is instantiated once in `SourceGarmin.read()` and the resulting
+authenticated client is passed to every stream.
+
+### Reasons
+1. **Rate-limit safety** — Garmin rate-limits logins aggressively. Creating one
+   client per stream would multiply login attempts and risk a temporary account
+   lock on the first sync.
+2. **Performance** — Even with session restore (no network call), instantiating
+   `GarminAuth` multiple times is wasteful. One call, one client.
+3. **Consistency** — All streams in a single run operate against the same
+   authenticated session, so there is no risk of one stream seeing a token
+   refresh that another stream has not.
+
+### Trade-offs
+If a session expires *mid-run* (unlikely but possible for very long syncs),
+the shared client will start raising auth errors for all subsequent streams.
+The fix would be to add a re-authentication step inside `GarminStream.read()`,
+but this edge case is not worth the added complexity at this stage.
