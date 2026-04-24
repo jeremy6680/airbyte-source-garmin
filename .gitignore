@@ -7,7 +7,7 @@ secrets/
 *.pem
 *.key
 
-# Garmin session token (contient des tokens OAuth sérialisés)
+# Garmin session token (contains serialised OAuth tokens)
 garmin_session.json
 *.session.json
 
@@ -36,23 +36,23 @@ htmlcov/
 coverage.xml
 
 # =============================================================================
-# AIRBYTE SPÉCIFIQUE
+# AIRBYTE SPECIFIC
 # =============================================================================
-# Fichiers de config locaux avec vrais credentials
+# Local config files containing real credentials
 secrets/config.json
 secrets/catalog.json
 
-# Output des commandes read (peut contenir des données de santé personnelles)
+# Output of `read` commands (may contain personal health data)
 output/
 *.jsonl
 
-# Cache Airbyte
+# Airbyte local cache
 .airbyte/
 
 # =============================================================================
 # DOCKER
 # =============================================================================
-# Ne pas committer les images buildées localement
+# Locally built images
 *.tar
 
 # =============================================================================
@@ -76,11 +76,11 @@ Thumbs.db
 logs/
 
 # =============================================================================
-# EXCEPTIONS — GARDER CES FICHIERS
+# EXCEPTIONS — KEEP THESE FILES
 # =============================================================================
-# Le dossier secrets doit exister mais être vide (sauf .gitkeep)
+# The secrets directory must exist but stay empty (except .gitkeep)
 !secrets/.gitkeep
 
-# Les fixtures de test sont des données fictives — OK à committer
+# Test fixtures are fake data — safe to commit
 !unit_tests/fixtures/
 !integration_tests/sample_files/

@@ -1,0 +1,6 @@
+{
+  "email": "your-garmin-email@example.com",
+  "password": "your-garmin-password",
+  "lookback_days": 30,
+  "session_file_path": "/tmp/garmin_session.json"
+}

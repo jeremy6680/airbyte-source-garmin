@@ -1,0 +1,20 @@
+# =============================================================================
+# DEVELOPMENT & TEST DEPENDENCIES
+# NOT installed inside the Docker image — local/CI use only.
+# Install with: pip install -r requirements-dev.txt
+# =============================================================================
+
+# Include runtime dependencies so a single `pip install -r requirements-dev.txt`
+# sets up a fully working local environment.
+-r requirements.txt
+
+# Test runner
+pytest>=7.4.0
+
+# Mocking library for patching garminconnect.Garmin without real network calls.
+# pytest-mock wraps unittest.mock with a cleaner `mocker` fixture.
+pytest-mock>=3.12.0
+
+# Coverage measurement — generates HTML and XML reports used by CI.
+coverage>=7.3.0
+pytest-cov>=4.1.0

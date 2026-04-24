@@ -1,0 +1,23 @@
+# =============================================================================
+# RUNTIME DEPENDENCIES
+# Installed both locally and inside the Docker image.
+# Keep this list minimal — only what the connector needs to run in production.
+# =============================================================================
+
+# Garmin Connect unofficial API client.
+# Uses SSO scraping via the `garth` library underneath to authenticate
+# and persist OAuth tokens without an official Garmin API key.
+garminconnect>=0.2.19
+
+# DataFrame library for field mapping, type casting, and data cleaning.
+# Polars is explicitly forbidden by CLAUDE.md — use Pandas only.
+pandas>=2.0.0
+
+# Drop-in replacement for the standard `logging` module with structured output,
+# coloured console messages, and easy JSON-sink support for production logging.
+loguru>=0.7.0
+
+# Pydantic v2 extension that loads settings from environment variables, .env
+# files, and JSON files. Used to validate the connector config passed via
+# `--config /secrets/config.json`.
+pydantic-settings>=2.1.0
