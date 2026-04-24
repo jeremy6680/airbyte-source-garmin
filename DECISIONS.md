@@ -156,3 +156,39 @@ The scaffolded file is `source_garmin/streams/calendar.py` but CLAUDE.md specifi
 ### Decision
 The file will be renamed (not patched) when implementing the calendar events stream
 in Step 11.
+
+---
+
+## ADR-008 — `load_config()` uses `json.load() + **raw` instead of the built-in JSON settings source
+
+**Status**: Accepted  
+**Step**: 2 (Config)
+
+### Context
+`pydantic-settings` v2 ships a `JsonConfigSettingsSource` that can read a JSON file
+automatically as part of the settings resolution chain. We could have wired it up
+in `model_config` and avoided `load_config()` entirely.
+
+### Decision
+Use an explicit `json.load(config_path)` + `ConnectorConfig(**raw)` pattern in a
+standalone `load_config()` helper instead.
+
+### Reasons
+1. **File path comes from the CLI** — Airbyte passes `--config /path/to/file` as a
+   runtime argument. The pydantic-settings built-in JSON source requires the path to
+   be known at *class definition time* (baked into `model_config`), not at
+   instantiation time. Wiring the CLI argument through would require either a global
+   variable or a factory pattern more complex than the simple helper we have.
+2. **Explicit is clearer** — `load_config(path)` is a single, obvious call site.
+   A reader can follow the data flow without knowing how `SettingsConfigDict`'s
+   sources are prioritised.
+3. **env-var override still works** — because we still subclass `BaseSettings`, the
+   `GARMIN_*` environment variable override (see `env_prefix`) remains available for
+   Docker deployments, even though the JSON file is loaded manually.
+
+### Trade-offs
+- We lose the automatic layering (env vars > JSON file > defaults) that
+  `JsonConfigSettingsSource` provides for free. In practice, `GARMIN_*` env vars
+  still override defaults via `BaseSettings`, but they do *not* override values
+  from the JSON file — the `**raw` unpack takes precedence. This is acceptable
+  because Airbyte always provides a complete config file.
