@@ -384,3 +384,58 @@ If a session expires *mid-run* (unlikely but possible for very long syncs),
 the shared client will start raising auth errors for all subsequent streams.
 The fix would be to add a re-authentication step inside `GarminStream.read()`,
 but this edge case is not worth the added complexity at this stage.
+
+---
+
+## ADR-016 — `json.dumps(default=str)` as a serialisation safety net in `_emit()`
+
+**Status**: Accepted  
+**Step**: 7 (Entrypoint)
+
+### Context
+Every Airbyte message is serialised with `json.dumps()` in `_emit()`. Standard
+`json.dumps()` raises `TypeError` if any value is not JSON-serialisable (e.g. a
+`datetime`, `date`, or `Decimal` object that slipped through the transformation
+layer).
+
+### Decision
+Pass `default=str` to `json.dumps()` in `_emit()`.
+
+### Reasons
+- If a non-serialisable value reaches `_emit()`, the entire sync fails with an
+  opaque `TypeError` rather than a meaningful error message. `default=str` converts
+  the value to its string representation and logs it, allowing the sync to complete
+  and making the issue visible in the destination.
+- The proper fix is to ensure all field types are JSON-safe before yielding
+  (handled in stream transformations), but `default=str` is a last-resort guard
+  that prevents a type edge case from crashing a full sync.
+
+### Trade-offs
+- A value serialised via `str()` (e.g. `"2024-03-15"` from a `date` object) may
+  look correct in the destination but silently bypass the declared schema type.
+  Acceptable as a fallback; not acceptable as a primary strategy.
+
+---
+
+## ADR-017 — `check` exits with code 0 even when status is FAILED
+
+**Status**: Accepted  
+**Step**: 7 (Entrypoint)
+
+### Context
+When credentials are wrong, `check` emits a `CONNECTION_STATUS: FAILED` message.
+One might expect the process to exit with code 1 to signal failure to the caller.
+
+### Decision
+`check` always exits with code 0, regardless of the connection status.
+
+### Reasons
+This is a requirement of the Airbyte protocol. The `check` command communicates
+success or failure exclusively through the `CONNECTION_STATUS` message on stdout —
+the exit code is not inspected by the Airbyte platform for this command. Exiting
+with code 1 on a FAILED check would be non-standard and could break integrations
+that follow the protocol strictly.
+
+Contrast this with `read`, where a fatal exception does warrant `sys.exit(1)`,
+because an incomplete read with exit code 0 would falsely appear as a successful
+sync in the Airbyte UI.
