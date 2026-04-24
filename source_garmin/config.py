@@ -5,33 +5,19 @@ This module defines ConnectorConfig, a Pydantic BaseSettings model that:
   - Validates the JSON file passed via `python main.py ... --config /secrets/config.json`
   - Provides typed, coerced fields (no raw dict access anywhere else in the codebase)
   - Generates the Airbyte SPEC JSON Schema automatically via .model_json_schema()
-  - Masks the password in logs thanks to SecretStr
+  - Masks the password in logs via SecretStr (access the raw value with .get_secret_value())
 """
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ConnectorConfig(BaseSettings):
-    """Validated configuration for the Garmin Connect source connector.
-
-    Airbyte passes config as a JSON file (--config /secrets/config.json).
-    pydantic-settings reads that file and coerces every field to the declared type,
-    raising a clear ValidationError if anything is missing or out of range.
-
-    Attributes:
-        email: Garmin Connect account email address.
-        password: Garmin Connect account password. Stored as SecretStr so it
-            never appears in log output or repr().
-        lookback_days: How many calendar days back to fetch on a FULL_REFRESH sync.
-            Clamped to 1–365 by the validator below.
-        session_file_path: Path where the serialised OAuth token is stored between
-            runs. Must be writable by the process (use a Docker volume in prod).
-    """
+    """Validated configuration for the Garmin Connect source connector."""
 
     model_config = SettingsConfigDict(
-        # Allow loading from a JSON file passed at runtime.
-        # The actual file path is resolved in main.py before instantiation.
+        # Allow loading from environment variables prefixed with GARMIN_.
+        # e.g. GARMIN_EMAIL, GARMIN_PASSWORD — useful for Docker deployments.
         env_prefix="GARMIN_",
         # Do not read a .env file automatically — credentials come from the
         # Airbyte-managed config file only.
@@ -44,7 +30,9 @@ class ConnectorConfig(BaseSettings):
         json_schema_extra={"order": 0},
     )
 
-    password: str = Field(
+    # SecretStr prevents the password from appearing in repr() or log output.
+    # To pass it to garminconnect.Garmin(), call config.password.get_secret_value().
+    password: SecretStr = Field(
         ...,
         description="Garmin Connect account password.",
         # airbyte_secret instructs the Airbyte UI to mask this field.
@@ -89,10 +77,14 @@ class ConnectorConfig(BaseSettings):
             raise ValueError("email must not be empty")
         return value.strip()
 
-    @field_validator("password")
+    @field_validator("password", mode="before")
     @classmethod
     def password_must_not_be_empty(cls, value: str) -> str:
-        """Reject blank password strings.
+        """Reject blank password strings before SecretStr wrapping occurs.
+
+        mode="before" means this validator receives the raw string from the JSON
+        file, before Pydantic wraps it in SecretStr. Returning a plain str here
+        is correct — Pydantic will wrap it afterwards.
 
         Args:
             value: The raw password string from config.
@@ -103,7 +95,7 @@ class ConnectorConfig(BaseSettings):
         Raises:
             ValueError: If the password is blank after stripping whitespace.
         """
-        if not value.strip():
+        if not str(value).strip():
             raise ValueError("password must not be empty")
         return value
 
@@ -139,11 +131,18 @@ def build_spec() -> dict:
     Derives the connection specification directly from the Pydantic model so
     there is a single source of truth — no hand-written JSON Schema to maintain.
 
+    The class-level docstring is stripped from the schema (KB-005) to avoid
+    leaking Python implementation details into the Airbyte UI description field.
+
     Returns:
         A dict shaped as an Airbyte AirbyteMessage SPEC payload, ready to be
         serialised to JSON and printed to stdout.
     """
     schema = ConnectorConfig.model_json_schema()
+
+    # Remove the class docstring that Pydantic injects as "description".
+    # Field-level descriptions (email, password, etc.) are kept — they are useful.
+    schema.pop("description", None)
 
     return {
         "type": "SPEC",

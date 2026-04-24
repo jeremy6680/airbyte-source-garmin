@@ -70,8 +70,7 @@ or delete it if we are not targeting the Airbyte connector registry.
 
 **Severity**: Medium (credential leak in logs/repr)  
 **Introduced**: Step 2 (Config)  
-**Target fix**: Before Step 3 (Auth) — must be fixed before the password is ever
-passed to `garminconnect.Garmin()`
+**Fixed**: Step 3 (Auth) — resolved in `config.py` rewrite
 
 ### Description
 The module docstring (line 8) and the class docstring (lines 24–25) both claim the
@@ -109,7 +108,7 @@ print(repr(cfg))   # password='s3cr3t' — plaintext
 
 **Severity**: Low (cosmetic, but visible in the Airbyte UI)  
 **Introduced**: Step 2 (Config)  
-**Target fix**: Step 6 (Main source) or whenever SPEC output is polished
+**Fixed**: Step 3 (Auth) — `build_spec()` now pops `description` from schema
 
 ### Description
 `ConnectorConfig.model_json_schema()` includes the full class docstring in the
