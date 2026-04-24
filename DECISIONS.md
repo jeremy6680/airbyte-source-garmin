@@ -192,3 +192,72 @@ standalone `load_config()` helper instead.
   still override defaults via `BaseSettings`, but they do *not* override values
   from the JSON file — the `**raw` unpack takes precedence. This is acceptable
   because Airbyte always provides a complete config file.
+
+---
+
+## ADR-009 — `read_records()` receives an authenticated client, not a config
+
+**Status**: Accepted  
+**Step**: 4 (Base stream)
+
+### Context
+Stream implementations need to call the Garmin API. They could either receive
+the full `ConnectorConfig` and instantiate `GarminAuth` themselves, or receive
+an already-authenticated `garminconnect.Garmin` client from the caller.
+
+### Decision
+`read_records()` accepts a `garminconnect.Garmin` client as its first argument.
+Authentication is the responsibility of `source.py`, not the streams.
+
+### Reasons
+1. **Separation of concerns** — streams are pure data-fetching logic; auth is
+   infrastructure. Mixing them would make each stream harder to read and test.
+2. **Testability** — mocking a `garminconnect.Garmin` client in unit tests is
+   a one-liner (`MagicMock()`). Mocking the full auth flow would require patching
+   multiple layers.
+3. **Single auth instance** — `source.py` creates one client and passes it to all
+   streams, avoiding redundant login attempts or session file races.
+
+---
+
+## ADR-010 — `read()` is a generator (yields records one at a time)
+
+**Status**: Accepted  
+**Step**: 4 (Base stream)
+
+### Context
+`read()` could accumulate all records into a list and return it, or yield each
+record as it is produced.
+
+### Decision
+`read()` (and `read_records()` in all stream implementations) are generators —
+they `yield` individual Airbyte message dicts.
+
+### Reasons
+1. **Memory** — yielding records one at a time means the connector never holds
+   all records in memory simultaneously. For a Garmin account with years of daily
+   health data, buffering everything would be wasteful.
+2. **Streaming protocol** — Airbyte reads connectors by consuming stdout line by
+   line. A generator maps naturally onto this: each `yield` becomes one JSON line
+   printed by `main.py`, with no intermediate list allocation.
+
+---
+
+## ADR-011 — `_compute_start_date()` accepts `today` as a parameter
+
+**Status**: Accepted  
+**Step**: 4 (Base stream)
+
+### Context
+The start date of the fetch window depends on "today". Hardcoding `date.today()`
+inside the method makes it impossible to test deterministically.
+
+### Decision
+`_compute_start_date()` accepts `today: date` as an explicit argument, injected
+by the `read()` method which calls `date.today()` once at the top of the run.
+
+### Reasons
+- Unit tests can pass a fixed `today` value and assert exact date windows without
+  time-dependent flakiness.
+- `date.today()` is called exactly once per sync run, which is the correct
+  behaviour — all streams in a single run share the same reference date.

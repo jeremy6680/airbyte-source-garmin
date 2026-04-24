@@ -47,6 +47,7 @@ airbyte-source-garmin/
 ├── CLAUDE.md
 ├── README.md
 ├── DECISIONS.md
+├── KNOWN_BUGS.md
 ├── CHANGELOG.md
 ├── Dockerfile
 ├── main.py                        # Airbyte CLI entrypoint
@@ -217,6 +218,23 @@ ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
 - Require real credentials in `secrets/config.json` (git-ignored)
 - Never commit `secrets/`
 - Run with: `pytest integration_tests/ -v -s`
+
+---
+
+## Living documentation
+
+Two files track architectural decisions and open issues across sessions:
+
+| File | Purpose | When to update |
+|------|---------|----------------|
+| `DECISIONS.md` | Architectural Decision Record log — one ADR per non-obvious technical choice | After each step: add an ADR if a pattern, library, or design was chosen for non-obvious reasons |
+| `KNOWN_BUGS.md` | Open issues, naming mismatches, deferred fixes | When a bug or mismatch is discovered (add entry); when it is resolved (mark as fixed with step number) |
+
+**Rules:**
+- Not every step needs new entries — only add when something genuinely non-obvious happened
+- Always update before suggesting a commit
+- Mark resolved bugs with `**Fixed**: Step N — description` rather than deleting the entry (the history is useful)
+- ADRs are never deleted — if a decision is reversed, add a new ADR that supersedes the old one and references it
 
 ---
 
