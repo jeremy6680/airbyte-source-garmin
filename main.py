@@ -4,7 +4,8 @@ Airbyte CLI entrypoint for airbyte-source-garmin.
 Airbyte invokes this file directly as a subprocess and communicates via
 standard streams:
   - stdout: Airbyte protocol messages (one JSON object per line, flushed immediately)
-  - stderr: human-readable logs (loguru output — never mixed into stdout)
+            This includes RECORD, STATE, LOG, SPEC, CATALOG, CONNECTION_STATUS.
+  - stderr: unused (loguru is redirected to stdout via the Airbyte LOG format)
   - exit code: 0 on success, 1 on fatal error
 
 Supported commands:
@@ -27,15 +28,51 @@ from source_garmin.source import SourceGarmin
 
 
 def _configure_logging() -> None:
-    """Route all loguru output to stderr, leaving stdout clean for Airbyte messages.
+    """Route loguru output through the Airbyte LOG protocol message format.
 
     Airbyte reads stdout line-by-line and expects every line to be a valid
-    JSON protocol message. A stray log line on stdout would break the parse.
-    Removing the default loguru handler (which also writes to stderr but with
-    ANSI colour codes) and replacing it with a plain one keeps CI logs readable.
+    JSON protocol message. A stray plain-text log line on stdout would break
+    the parse; writing all logs to stderr causes Airbyte to label everything
+    as ERROR regardless of actual severity.
+
+    The correct approach is to emit {"type": "LOG", "log": {...}} messages to
+    stdout — Airbyte's replication layer parses the level field and displays
+    them with the right severity in its UI.
+
+    loguru's custom sink API lets us intercept every log call and format it as
+    an Airbyte message without changing any call site.
     """
+    # Mapping from loguru level names to the Airbyte LOG level vocabulary.
+    # Airbyte only accepts DEBUG / INFO / WARN / ERROR (not WARNING or CRITICAL).
+    _LEVEL_MAP = {
+        "TRACE":    "DEBUG",
+        "DEBUG":    "DEBUG",
+        "INFO":     "INFO",
+        "SUCCESS":  "INFO",
+        "WARNING":  "WARN",
+        "ERROR":    "ERROR",
+        "CRITICAL": "ERROR",
+    }
+
+    def _airbyte_sink(message) -> None:
+        """Emit a single loguru record as an Airbyte LOG protocol message.
+
+        Args:
+            message: loguru message object. message.record contains the raw
+                fields; message.record["message"] holds the already-formatted
+                text (i.e. {} placeholders already substituted).
+        """
+        level = _LEVEL_MAP.get(message.record["level"].name, "INFO")
+        print(
+            json.dumps({
+                "type": "LOG",
+                "log": {"level": level, "message": message.record["message"]},
+            }),
+            flush=True,
+        )
+
     logger.remove()  # remove the default coloured stderr handler
-    logger.add(sys.stderr, level="INFO", colorize=False, format="{time} | {level} | {message}")
+    logger.add(_airbyte_sink, level="INFO", format="{message}")
 
 
 def _emit(message: dict) -> None:
