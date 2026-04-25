@@ -44,16 +44,12 @@ Update the import in `unit_tests/test_streams.py` accordingly.
 
 **Severity**: Cosmetic  
 **Introduced**: Initial scaffold  
-**Target fix**: Step 6 (Main source) or cleanup pass
+**Fixed**: v0.1.1 — file deleted
 
 ### Description
 `source_garmin/manifest.yaml` was created by the initial scaffold but is empty.
 It is only meaningful for Airbyte's declarative connector builder and has no role
 in this low-level Python connector.
-
-### Fix plan
-Delete the file in the cleanup pass after Step 6, once the connector structure
-is confirmed stable.
 
 ---
 
@@ -61,16 +57,13 @@ is confirmed stable.
 
 **Severity**: Cosmetic  
 **Introduced**: Initial scaffold  
-**Target fix**: Step 9 (Docker) or cleanup pass
+**Fixed**: v0.1.1 — file deleted (not targeting the Airbyte connector registry)
 
 ### Description
 `metadata.yaml` at the project root is empty. Airbyte uses this file in its
 connector registry to declare connector metadata (name, icon, version, etc.).
-It is not required for local or Docker-based operation.
-
-### Fix plan
-Either fill it with valid metadata when packaging the connector for Docker (Step 9),
-or delete it if we are not targeting the Airbyte connector registry.
+It is not required for local or Docker-based operation, and the project does not
+target the Airbyte registry, so the file was removed.
 
 ---
 
@@ -136,25 +129,28 @@ while dropping the class-level one (which is implementation noise).
 
 **Severity**: Medium (could cause sync failures on large accounts)  
 **Introduced**: Step 5 (Activities stream)  
-**Target fix**: After Step 7 (Entrypoint) — add a shared retry decorator
+**Fixed**: v0.1.1 — extracted retry logic to `source_garmin/utils.py: retry_on_429()`; all three stream `read_records()` methods and `GarminAuth._login_with_retry()` now delegate to it
 
 ### Description
-`GarminAuth._login_with_retry()` retries on HTTP 429 for the login step only.
-API read calls (`client.get_activities_by_date()`, etc.) can also return 429 if
+`GarminAuth._login_with_retry()` retried on HTTP 429 for the login step only.
+API read calls (`client.get_activities_by_date()`, etc.) could also return 429 if
 too many requests are made in a short window — this is especially likely on first
-sync of a large account with years of history. Currently the exception propagates
-uncaught and the entire sync fails.
+sync of a large account with years of history. Previously the exception propagated
+uncaught (activities) or was silently skipped (daily_health, calendar_events).
 
-### Fix plan
-Extract the retry logic from `GarminAuth` into a reusable utility function (e.g.
-`source_garmin/utils.py: retry_on_429(fn, delays)`). Wrap each Garmin API call in
-`read_records()` with this utility.
+### Fix
+Created `source_garmin/utils.py` with `retry_on_429(fn, delays)`.  The function
+is the single source of truth for the backoff schedule (30 s, 60 s, 120 s).
+`GarminAuth._login_with_retry()` was simplified to delegate to it, and all three
+stream `read_records()` methods wrap their API calls with it.  `test_utils.py`
+covers the full retry behaviour independently.
 
 ### Affected files
+- `source_garmin/utils.py` — new file, defines `retry_on_429`
 - `source_garmin/streams/activities.py` — `read_records()` API call
-- `source_garmin/streams/daily_health.py` — same (Step 10)
-- `source_garmin/streams/calendar_events.py` — same (Step 11)
-- `source_garmin/auth.py` — refactor to use shared utility
+- `source_garmin/streams/daily_health.py` — per-day API call
+- `source_garmin/streams/calendar_events.py` — per-week API call
+- `source_garmin/auth.py` — `_login_with_retry()` now delegates to `retry_on_429`
 
 ---
 

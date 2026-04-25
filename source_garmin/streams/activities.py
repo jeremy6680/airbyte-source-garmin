@@ -20,6 +20,7 @@ from loguru import logger
 
 from source_garmin.config import ConnectorConfig
 from source_garmin.streams.base import GarminStream
+from source_garmin.utils import retry_on_429
 
 # ---------------------------------------------------------------------------
 # Physiological sanity-check thresholds.
@@ -147,9 +148,11 @@ class ActivitiesStream(GarminStream):
         )
 
         try:
-            raw_activities: List[Dict[str, Any]] = client.get_activities_by_date(
-                start_date.isoformat(),
-                end_date.isoformat(),
+            raw_activities: List[Dict[str, Any]] = retry_on_429(
+                lambda: client.get_activities_by_date(
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                )
             )
         except Exception as exc:
             logger.error("Garmin API error while fetching activities: {}", exc)

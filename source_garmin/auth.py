@@ -12,20 +12,13 @@ Authentication flow on each connector run:
 """
 
 import os
-import time
 from typing import Optional
 
 import garminconnect
 from loguru import logger
 
 from source_garmin.config import ConnectorConfig
-
-# ---------------------------------------------------------------------------
-# Retry delays (seconds) applied between consecutive HTTP 429 responses.
-# Index 0 → wait after attempt 1, index 1 → wait after attempt 2, etc.
-# The total number of attempts equals len(_RETRY_DELAYS).
-# ---------------------------------------------------------------------------
-_RETRY_DELAYS = [30, 60, 120]
+from source_garmin.utils import _RETRY_DELAYS, retry_on_429
 
 
 class GarminAuth:
@@ -141,9 +134,9 @@ class GarminAuth:
     def _login_with_retry(self, client: garminconnect.Garmin) -> None:
         """Perform a fresh SSO login, retrying on HTTP 429 rate-limit errors.
 
-        Attempts the login up to len(_RETRY_DELAYS) times. On each 429 response,
-        waits the corresponding delay before the next attempt. Raises immediately
-        on authentication errors — retrying a bad password is pointless.
+        Delegates retry logic to retry_on_429() from utils.py so the backoff
+        schedule is defined and tested in one place.  Raises immediately on
+        authentication errors — retrying a bad password is pointless.
 
         After a successful login, persists the token to disk so the next run can
         skip the SSO flow entirely.
@@ -156,39 +149,16 @@ class GarminAuth:
             garminconnect.GarminConnectTooManyRequestsError: When all retry
                 attempts are exhausted.
         """
-        last_exception: Optional[Exception] = None
-        max_attempts = len(_RETRY_DELAYS)
+        try:
+            retry_on_429(client.login)
+        except garminconnect.GarminConnectAuthenticationError:
+            # Wrong credentials — retrying will never fix this.
+            logger.error("Garmin authentication failed: invalid email or password.")
+            raise
+        # GarminConnectTooManyRequestsError propagates from retry_on_429 as-is.
 
-        for attempt in range(1, max_attempts + 1):
-            try:
-                client.login()
-                self._save_session(client)
-                logger.info("Garmin login successful on attempt {}/{}.", attempt, max_attempts)
-                return
-
-            except garminconnect.GarminConnectAuthenticationError:
-                # Wrong credentials — retrying will never fix this.
-                logger.error("Garmin authentication failed: invalid email or password.")
-                raise
-
-            except garminconnect.GarminConnectTooManyRequestsError as exc:
-                last_exception = exc
-                if attempt < max_attempts:
-                    delay = _RETRY_DELAYS[attempt - 1]
-                    logger.warning(
-                        "Garmin rate-limited (429) on attempt {}/{}. "
-                        "Waiting {}s before next attempt.",
-                        attempt,
-                        max_attempts,
-                        delay,
-                    )
-                    time.sleep(delay)
-                else:
-                    logger.error(
-                        "Garmin login failed: rate limit persisted after {} attempts.",
-                        max_attempts,
-                    )
-                    raise last_exception  # type: ignore[misc]
+        self._save_session(client)
+        logger.info("Garmin login successful.")
 
     def _save_session(self, client: garminconnect.Garmin) -> None:
         """Persist the OAuth token to the configured session file.

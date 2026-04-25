@@ -9,7 +9,8 @@
       "Bash(python3 -m pytest unit_tests/ -v --tb=short)",
       "Bash(git mv *)",
       "Bash(docker build *)",
-      "Bash(docker run *)"
+      "Bash(docker run *)",
+      "Bash(python -m pytest unit_tests/ -v)"
     ]
   }
 }

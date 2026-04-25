@@ -6,6 +6,22 @@ Format: `[version] YYYY-MM-DD — description`
 
 ---
 
+## [0.1.1] — 2026-04-25
+
+### Fixed
+
+- **KB-006** — HTTP 429 during API reads was not retried.  Extracted retry logic
+  into `source_garmin/utils.py: retry_on_429()` (single source of truth for the
+  30 s / 60 s / 120 s backoff schedule).  All three stream `read_records()` methods
+  now wrap their Garmin API calls with it; `GarminAuth._login_with_retry()` was
+  simplified to delegate to the same utility.  Added `unit_tests/test_utils.py`
+  with 8 tests covering the full retry surface (ADR-022).
+- **KB-002** — deleted empty `source_garmin/manifest.yaml` leftover.
+- **KB-003** — deleted empty `metadata.yaml` leftover (not targeting the Airbyte
+  connector registry).
+
+---
+
 ## [0.1.0] — 2026-04-25
 
 Initial release. Fully functional custom Airbyte source connector for Garmin Connect.

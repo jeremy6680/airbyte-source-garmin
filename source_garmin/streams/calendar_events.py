@@ -22,6 +22,7 @@ from loguru import logger
 
 from source_garmin.config import ConnectorConfig
 from source_garmin.streams.base import GarminStream
+from source_garmin.utils import retry_on_429
 
 # How far into the future to look for upcoming calendar events.
 # A year is wide enough to capture most race registrations.
@@ -141,7 +142,9 @@ class CalendarEventsStream(GarminStream):
         while current <= query_end:
             year, week, _ = current.isocalendar()
             try:
-                week_items: List[Dict[str, Any]] = client.get_calendar_week(year, week) or []
+                week_items: List[Dict[str, Any]] = (
+                    retry_on_429(lambda: client.get_calendar_week(year, week)) or []
+                )
             except Exception as exc:
                 logger.warning(
                     "Could not fetch calendar for {}-W{:02d} — skipping: {}",

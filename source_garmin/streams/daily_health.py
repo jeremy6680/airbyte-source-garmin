@@ -20,6 +20,7 @@ from loguru import logger
 
 from source_garmin.config import ConnectorConfig
 from source_garmin.streams.base import GarminStream
+from source_garmin.utils import retry_on_429
 
 # ---------------------------------------------------------------------------
 # Physiological sanity-check thresholds for resting heart rate.
@@ -150,7 +151,7 @@ class DailyHealthStream(GarminStream):
         while current <= end_date:
             cdate = current.isoformat()
             try:
-                daily = client.get_user_summary(cdate)
+                daily = retry_on_429(lambda: client.get_user_summary(cdate))
             except Exception as exc:
                 logger.warning(
                     "Could not fetch daily health summary for {} — skipping: {}",

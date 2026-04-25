@@ -594,3 +594,46 @@ if sync_mode == "incremental" and self.cursor_field and latest_cursor:
 ### Trade-offs
 - None: the change is strictly narrowing (fewer messages emitted), compatible with
   all Airbyte destination connectors, and covered by the updated unit test.
+
+---
+
+## ADR-022 — Shared `retry_on_429` utility replaces duplicated retry loops
+
+**Status**: Accepted  
+**Step**: v0.1.1 (Bug fix — resolves KB-006)
+
+### Context
+The initial implementation contained retry-on-429 logic only in
+`GarminAuth._login_with_retry()`.  Stream `read_records()` methods made API calls
+without any retry protection: activities would crash on 429, while daily_health and
+calendar_events would silently skip affected records (the exception was swallowed by
+the `except Exception` log-and-continue handler).
+
+### Decision
+Extract the backoff loop into `source_garmin/utils.py: retry_on_429(fn, delays)`.
+`GarminAuth._login_with_retry()` is simplified to delegate to it.  All three
+stream `read_records()` methods wrap their Garmin API calls with it.
+
+`_RETRY_DELAYS` (the backoff schedule) is defined once in `utils.py` and imported
+wherever it is needed — there is no duplication of the magic numbers.
+
+### Reasons
+1. **Single source of truth** — the backoff schedule (30 s, 60 s, 120 s) exists in
+   one place.  Changing it in `utils.py` updates all callers automatically.
+2. **Correctness** — previously a 429 on a per-day health summary call or a
+   per-week calendar call was silently logged as a warning and the record was
+   dropped.  Now those calls retry before giving up.
+3. **Testability** — `retry_on_429` is a pure function that takes a callable and a
+   delay list.  It is straightforward to unit-test in isolation in `test_utils.py`
+   without any stream or auth context.
+
+### Trade-offs
+- The `lambda` closures used to pass arguments to `retry_on_429` (e.g.
+  `lambda: client.get_activities_by_date(start, end)`) capture variables from the
+  enclosing scope by reference.  In a loop this can cause the classic
+  "late-binding closure" bug.  All three stream lambdas are created inside a
+  function call (not inside a loop variable assignment), so the captured values
+  are stable — but reviewers should be aware of this pattern.
+- `_login_with_retry()` no longer logs "successful on attempt X/Y" because
+  `retry_on_429` does not expose the attempt number to the caller.  The retry
+  warning logs from `retry_on_429` itself are sufficient.

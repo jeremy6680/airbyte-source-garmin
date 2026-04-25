@@ -15,7 +15,8 @@ from unittest.mock import MagicMock, patch
 import garminconnect
 import pytest
 
-from source_garmin.auth import GarminAuth, _RETRY_DELAYS
+from source_garmin.auth import GarminAuth
+from source_garmin.utils import _RETRY_DELAYS
 from source_garmin.config import ConnectorConfig
 
 
@@ -147,7 +148,7 @@ class TestTryLoadSession:
 class TestLoginWithRetry:
     """_login_with_retry() performs SSO login with exponential back-off on HTTP 429."""
 
-    @patch("source_garmin.auth.time.sleep")
+    @patch("source_garmin.utils.time.sleep")
     def test_succeeds_on_first_attempt_without_sleeping(self, mock_sleep, tmp_path):
         """No sleep when login succeeds immediately."""
         config = make_config(session_file_path=str(tmp_path / "session.json"))
@@ -159,7 +160,7 @@ class TestLoginWithRetry:
         mock_client.login.assert_called_once()
         mock_sleep.assert_not_called()
 
-    @patch("source_garmin.auth.time.sleep")
+    @patch("source_garmin.utils.time.sleep")
     def test_raises_immediately_on_invalid_credentials(self, mock_sleep):
         """GarminConnectAuthenticationError is re-raised immediately, never retried.
 
@@ -177,7 +178,7 @@ class TestLoginWithRetry:
         mock_client.login.assert_called_once()
         mock_sleep.assert_not_called()
 
-    @patch("source_garmin.auth.time.sleep")
+    @patch("source_garmin.utils.time.sleep")
     def test_retries_after_429_and_succeeds(self, mock_sleep, tmp_path):
         """Waits the first retry delay, then succeeds on the second attempt."""
         config = make_config(session_file_path=str(tmp_path / "session.json"))
@@ -194,7 +195,7 @@ class TestLoginWithRetry:
         # Must sleep exactly once, with the first retry delay.
         mock_sleep.assert_called_once_with(_RETRY_DELAYS[0])
 
-    @patch("source_garmin.auth.time.sleep")
+    @patch("source_garmin.utils.time.sleep")
     def test_raises_after_all_retry_attempts_exhausted(self, mock_sleep):
         """Raises GarminConnectTooManyRequestsError when every attempt is rate-limited."""
         auth = GarminAuth(make_config())
@@ -211,7 +212,7 @@ class TestLoginWithRetry:
         # Sleeps between attempts — one less sleep than total attempts.
         assert mock_sleep.call_count == len(_RETRY_DELAYS) - 1
 
-    @patch("source_garmin.auth.time.sleep")
+    @patch("source_garmin.utils.time.sleep")
     def test_sleep_durations_match_retry_delays_constant(self, mock_sleep, tmp_path):
         """Sleep is called with the exact values from _RETRY_DELAYS, in order."""
         config = make_config(session_file_path=str(tmp_path / "session.json"))
