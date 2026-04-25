@@ -111,12 +111,17 @@ python main.py read --config secrets/config.json --catalog secrets/catalog.json
 
 ## Running with Docker
 
+The image is published on Docker Hub as [`jeremy6680/source-garmin`](https://hub.docker.com/r/jeremy6680/source-garmin).
+
 ```bash
-# Build the image
+# Pull the latest published image (no build needed)
+docker pull jeremy6680/source-garmin:latest
+
+# Or build locally from source
 docker build -t source-garmin:dev .
 
 # Run spec (no config needed)
-docker run --rm source-garmin:dev spec
+docker run --rm jeremy6680/source-garmin:latest spec
 
 # Run check
 docker run --rm \
