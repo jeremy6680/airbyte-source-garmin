@@ -17,6 +17,6 @@ COPY setup.py .
 # Airbyte uses this env var to discover the connector entrypoint when running
 # inside the Airbyte platform. The Docker ENTRYPOINT below serves the same
 # purpose for direct `docker run` invocations.
-ENV AIRBYTE_ENTRYPOINT "python /airbyte/integration_code/main.py"
+ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
 
 ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
