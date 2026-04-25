@@ -149,7 +149,7 @@ covers the full retry behaviour independently.
 - `source_garmin/utils.py` — new file, defines `retry_on_429`
 - `source_garmin/streams/activities.py` — `read_records()` API call
 - `source_garmin/streams/daily_health.py` — per-day API call
-- `source_garmin/streams/calendar_events.py` — per-week API call
+- `source_garmin/streams/calendar_events.py` — per-month API call
 - `source_garmin/auth.py` — `_login_with_retry()` now delegates to `retry_on_429`
 
 ---
@@ -245,41 +245,20 @@ developer environment concern only.
 
 **Severity**: Low (tests pass, but documentation is misleading)  
 **Introduced**: Step 11 (CalendarEventsStream + tests)  
-**Fixed**: Step 12 — comment updated in `test_streams.py` to document the actual behavior; `_CAL_END` kept but annotated `# ignored by read_records — see KB-010`
+**Superseded**: v0.1.3 — `read_records()` was completely rewritten (ADR-024). The
+`get_calendar_week` mock no longer exists in the code; tests mock
+`get_scheduled_workouts` instead (see KB-013). The `_CAL_END` concern is still
+relevant for the rewritten tests — deduplication now uses URL as the key and the
+API response shape changed to `{"calendarItems": [...]}`.
 
-### Description
+### Description (historical)
 `CalendarEventsStream.read_records()` ignores the `end_date` argument from the base
-class and replaces it internally with `date.today() + 365 days` (forward-looking
-window, see ADR-020). As a result, the `_CAL_END = date(2024, 1, 21)` test variable
-declared in `unit_tests/test_streams.py` has no effect on the actual query window.
-
-The test comment states:
-```
-# Uses a one-week window (_CAL_START → _CAL_END) to force a single
-# get_calendar_week() call, keeping the mock simple.
-```
-This is incorrect. The actual loop runs from `_CAL_START` (2024-01-15) to
-`date.today() + 365`, making roughly 70+ `get_calendar_week()` calls in the
-field-mapping tests. The tests pass only because `return_value` (not `side_effect`)
-is used — every call returns the same fixture — and the deduplication set discards
-repeated event IDs.
-
-### Consequences
-- Tests make far more mock calls than intended, wasting cycles (negligible today
-  but grows as the fixture expands).
-- The misleading comment creates a false mental model for readers of the test.
-
-### Fix plan
-Either:
-1. Override `_compute_start_date` in `CalendarEventsStream` to expose the
-   forward window via the standard base-class machinery, allowing the test's
-   `end_date` to be respected; OR
-2. Update the test comment to accurately state that `_CAL_END` is ignored and
-   explain why the test still passes (deduplication + `return_value`).
+class and replaces it internally with `date.today() + 365 days`. The `_CAL_END`
+test variable had no effect; tests passed only because `return_value` caused every
+mock call to return the same fixture and the deduplication set discarded repeats.
 
 ### Affected files
-- `unit_tests/test_streams.py` — misleading comment on `_CAL_END`
-- `source_garmin/streams/calendar.py` — `read_records()` end_date override
+- `unit_tests/test_streams.py` — CalendarEventsStream tests need updating (KB-013)
 
 ---
 
@@ -350,6 +329,40 @@ remained `None`, causing `get_user_summary()` to raise
 `GarminConnectConnectionError("Display name is not set")` on every daily health call.
 The per-day `except Exception` handler in `DailyHealthStream.read_records()` silently
 skipped every day, producing 0 records with no fatal error.
+
+---
+
+## KB-013 — Unit tests for CalendarEventsStream mock the wrong method
+
+**Severity**: Medium (unit tests pass but test nothing meaningful)  
+**Introduced**: v0.1.3 — `read_records()` rewritten to use `get_scheduled_workouts`  
+**Target fix**: Next test update pass
+
+### Description
+`unit_tests/test_streams.py` mocks `client.get_calendar_week` on the stream's
+client. Since `get_calendar_week` no longer exists in `garminconnect` 0.3.x
+*and* is no longer called by the rewritten `read_records()`, the mock intercepts
+nothing. The test will either:
+- Pass vacuously (the mock method is never called, the loop calls the real
+  `get_scheduled_workouts` which, on a `MagicMock`, returns another `MagicMock`
+  instead of a dict with `calendarItems`), or
+- Fail with an unexpected return type when the code does
+  `response.get("calendarItems", [])` on a `MagicMock`.
+
+### Fix plan
+1. Change the mock target from `get_calendar_week` to `get_scheduled_workouts`.
+2. Update the fixture/return value to wrap items in `{"calendarItems": [...]}`.
+3. Rename `_CAL_END` annotation (see KB-010) and update call counts accordingly.
+4. Update the `event_id` assertion — field is now a synthetic hash-based int,
+   not the raw `id` from the fixture.
+5. Deduplication key changes from event `id` to event `url`.
+
+### Affected files
+- `unit_tests/test_streams.py` — all `TestCalendarEventsStream` tests
+- `unit_tests/fixtures/calendar_events.json` — response must now be
+  `{"calendarItems": [...]}` with `itemType: "event"` items
+
+---
 
 ### Why unit tests did not catch this
 Unit tests mock `garminconnect.Garmin` entirely. `MagicMock()` auto-creates

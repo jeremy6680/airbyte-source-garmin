@@ -113,26 +113,60 @@ python main.py read --config secrets/config.json --catalog secrets/catalog.json
 
 ```bash
 # Build the image
-docker build -t airbyte-source-garmin:dev .
+docker build -t source-garmin:dev .
 
 # Run spec (no config needed)
-docker run --rm airbyte-source-garmin:dev spec
+docker run --rm source-garmin:dev spec
 
 # Run check
 docker run --rm \
   -v $(pwd)/secrets:/secrets \
-  airbyte-source-garmin:dev \
+  source-garmin:dev \
   check --config /secrets/config.json
 
 # Run read
 docker run --rm \
   -v $(pwd)/secrets:/secrets \
   -v /tmp:/tmp \
-  airbyte-source-garmin:dev \
+  source-garmin:dev \
   read --config /secrets/config.json --catalog /secrets/catalog.json
 ```
 
 > The `-v /tmp:/tmp` mount gives the container access to the session file at `/tmp/garmin_session.json`. For a persistent mount, replace `/tmp` with a named volume path.
+
+---
+
+## Deploying to a local Airbyte instance (abctl)
+
+Airbyte installed via `abctl` runs on a KIND (Kubernetes IN Docker) cluster. The
+cluster has its own containerd image registry — images built with
+`docker build` are **not** automatically visible inside the cluster. You must load
+them manually.
+
+```bash
+# 1. Build the image
+docker build -t source-garmin:dev .
+
+# 2. Export it to a tar archive
+docker save source-garmin:dev -o /tmp/source-garmin.tar
+
+# 3. Copy the archive into the KIND node
+docker cp /tmp/source-garmin.tar airbyte-abctl-control-plane:/root/source-garmin.tar
+
+# 4. Import it into the k8s.io containerd namespace (required by Kubernetes)
+docker exec airbyte-abctl-control-plane \
+  ctr -n k8s.io images import /root/source-garmin.tar
+```
+
+Then in the Airbyte UI (`http://localhost:8000`):
+
+- **Settings → Sources → New connector**
+- Docker repository name: `source-garmin`
+- Docker image tag: `dev`
+
+> **Note:** Steps 2–4 must be repeated every time you rebuild the image. Consider
+> setting up a local Docker registry (`docker run -d -p 5000:5000 registry:2`) to
+> avoid the tar export/import cycle during iterative development.
 
 ---
 

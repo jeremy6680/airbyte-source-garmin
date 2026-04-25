@@ -515,7 +515,7 @@ The response includes all required fields plus the nested `lastNight` object
 
 ## ADR-020 — CalendarEventsStream: ISO week iteration with forward-looking window
 
-**Status**: Accepted  
+**Status**: Superseded by ADR-024  
 **Step**: 11 (CalendarEventsStream)
 
 ### Context
@@ -686,3 +686,54 @@ client.full_name = profile.get("fullName")
   `garminconnect` API surface. If Garmin changes this URL, `_try_load_session()`
   will return `False` on every run (triggering a fresh SSO login) — a graceful
   degradation rather than a crash.
+
+---
+
+## ADR-024 — CalendarEventsStream: month iteration via `get_scheduled_workouts` (supersedes ADR-020)
+
+**Status**: Accepted  
+**Step**: v0.1.3 (Bug fix — resolves KB-013)
+
+### Context
+`get_calendar_week(year, week)` assumed in ADR-020 does not exist in
+`garminconnect` 0.3.x. Every call raised `AttributeError`, causing the stream
+to emit 0 records silently (exceptions were caught by the per-week
+`except Exception` handler). The correct endpoint is
+`get_scheduled_workouts(year, month)`, which returns a `calendarItems` list
+covering the full calendar month including activities, naps, weight entries,
+and race events (`itemType == 'event'`).
+
+### Decision
+1. Replace `get_calendar_week(year, week)` with `get_scheduled_workouts(year, month)`.
+2. Iterate calendar months instead of ISO weeks.
+3. Filter `calendarItems` to `itemType == 'event'` only — other types are either
+   already covered by the `activities` stream or irrelevant (naps, weight).
+4. Deduplicate by `url` instead of `id`, because `id` is always `null` for
+   event-type items.
+5. Generate a synthetic `event_id` via `abs(hash(title + "|" + date)) % 2**31`
+   since the API provides no real identifier for events.
+
+### Reasons
+1. **Correctness** — the old method simply did not exist; no calendar events were
+   ever fetched. The new method is the correct API surface for calendar data.
+2. **Fewer API calls** — month iteration makes 14 calls over a 13-month window
+   vs. ~55 calls with week iteration, reducing rate-limit exposure.
+3. **Stable deduplication** — event URLs (e.g. `ahotu.com/event/...`) are stable
+   identifiers published by Garmin's race-catalog partner. Deduplicating by URL
+   is more semantically correct than by a hash of name+date.
+4. **Synthetic ID stability** — `hash()` in Python is seeded per-process
+   (PYTHONHASHSEED), but for FULL_REFRESH that is irrelevant: the ID is
+   recomputed on every sync and never stored between runs. If stable cross-process
+   IDs were needed, `hashlib.md5` would be the right choice.
+
+### Trade-offs
+- `get_scheduled_workouts` returns items from adjacent months (Garmin fills
+  calendar edges), so the deduplication set is still necessary even with monthly
+  iteration.
+- The `distance` field is always `null` for `itemType == 'event'` items — the
+  distance is embedded in the title string (e.g. "Nice Marathon (42.2 km)") and
+  is not parsed out. This is a known limitation; extracting it would require a
+  regex over localised title strings.
+- Unit tests that mocked `get_calendar_week` are now stale and must be updated
+  to mock `get_scheduled_workouts` with a `{"calendarItems": [...]}` response
+  shape (tracked in KB-013).
