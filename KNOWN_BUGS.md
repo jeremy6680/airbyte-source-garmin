@@ -326,3 +326,38 @@ records = list(stream.read_records(client, make_config(), _DH_START, _DH_END))
 
 ### Affected files
 - `unit_tests/test_streams.py` — `TestDailyHealthStreamMetadata.test_state_message_emitted_at_end_of_incremental_sync`
+
+---
+
+## KB-012 — `garminconnect` 0.3.x renamed `garth` → `client` and broke session persistence for `DailyHealthStream`
+
+**Severity**: High (DailyHealthStream silently returned 0 records on every sync after session restore)  
+**Introduced**: v0.1.0 (written against the old garth-based API)  
+**Fixed**: v0.1.2 — two changes to `source_garmin/auth.py`:
+  1. `client.garth.load/dump` → `client.client.load/dump`
+  2. Replaced `client.get_full_name()` with `client.connectapi("/userprofile-service/socialProfile")` for session validation
+
+### Description
+`garminconnect` 0.3.x replaced the `garth` OAuth library with an internal `Client`
+object. The old `client.garth` attribute no longer exists, so every call that
+touched it raised `AttributeError: 'Garmin' object has no attribute 'garth'`.
+
+Separately, `_try_load_session` used `client.get_full_name()` to validate the token.
+In 0.3.x, `get_full_name()` just returns the cached `self.full_name` (None for a
+fresh instance) — it makes no network call and never raises. The token appeared
+valid even for a brand-new unauthenticated instance. More critically, `display_name`
+remained `None`, causing `get_user_summary()` to raise
+`GarminConnectConnectionError("Display name is not set")` on every daily health call.
+The per-day `except Exception` handler in `DailyHealthStream.read_records()` silently
+skipped every day, producing 0 records with no fatal error.
+
+### Why unit tests did not catch this
+Unit tests mock `garminconnect.Garmin` entirely. `MagicMock()` auto-creates
+`mock_client.garth.load` on attribute access — so the tests always passed.
+Only integration tests against the real library exposed the breakage.
+
+### Fix (ADR-023)
+- `client.client.load/dump(path)` replaces `client.garth.load/dump(path)`
+- `client.connectapi("/userprofile-service/socialProfile")` replaces
+  `client.get_full_name()` — it validates the token with a real network call AND
+  populates `client.display_name`/`client.full_name` so all downstream endpoints work

@@ -109,15 +109,19 @@ class GarminAuth:
             return False
 
         try:
-            # garth.load() deserialises the OAuth token from JSON.
-            # It does NOT make a network call, so the token could still be expired.
-            client.garth.load(session_path)
+            # Deserialise the OAuth token from JSON.
+            # Does NOT make a network call — the token could still be expired.
+            client.client.load(session_path)
 
-            # Validate the token with the lightest available authenticated call.
-            # Raises an exception if the token is expired or revoked.
-            client.get_full_name()
+            # Fetch the social profile: validates the token with a real network call
+            # AND populates client.display_name / client.full_name, which are required
+            # by endpoints like get_user_summary() that call _require_display_name().
+            # Any expired or revoked token raises an exception here.
+            profile = client.connectapi("/userprofile-service/socialProfile")
+            client.display_name = profile.get("displayName", client.username)
+            client.full_name = profile.get("fullName")
 
-            logger.info("Restored valid Garmin session from {}.", session_path)
+            logger.info("Restored valid Garmin session for {}.", client.display_name)
             return True
 
         except Exception as exc:
@@ -178,7 +182,7 @@ class GarminAuth:
         os.makedirs(parent_dir, exist_ok=True)
 
         try:
-            client.garth.dump(session_path)
+            client.client.dump(session_path)
             logger.info("Garmin session token saved to {}.", session_path)
         except OSError as exc:
             logger.warning(

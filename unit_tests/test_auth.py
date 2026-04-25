@@ -90,10 +90,10 @@ class TestTryLoadSession:
         result = auth._try_load_session(mock_client)
 
         assert result is False
-        mock_client.garth.load.assert_not_called()
+        mock_client.client.load.assert_not_called()
 
     def test_returns_true_for_valid_cached_session(self, tmp_path):
-        """Returns True when the file exists and the token validation call succeeds."""
+        """Returns True when the file exists and the social profile call succeeds."""
         session_file = tmp_path / "session.json"
         session_file.write_text("{}")  # file must physically exist
 
@@ -101,16 +101,18 @@ class TestTryLoadSession:
         auth = GarminAuth(config)
 
         mock_client = MagicMock()
-        mock_client.get_full_name.return_value = "Jane Doe"
+        mock_client.connectapi.return_value = {"displayName": "jdoe", "fullName": "Jane Doe"}
 
         result = auth._try_load_session(mock_client)
 
         assert result is True
-        mock_client.garth.load.assert_called_once_with(str(session_file))
-        mock_client.get_full_name.assert_called_once()
+        mock_client.client.load.assert_called_once_with(str(session_file))
+        mock_client.connectapi.assert_called_once_with("/userprofile-service/socialProfile")
+        assert mock_client.display_name == "jdoe"
+        assert mock_client.full_name == "Jane Doe"
 
     def test_returns_false_when_token_is_expired(self, tmp_path):
-        """Returns False (no exception to the caller) when the validation call fails."""
+        """Returns False (no exception to the caller) when the profile call fails."""
         session_file = tmp_path / "session.json"
         session_file.write_text("{}")
 
@@ -119,14 +121,14 @@ class TestTryLoadSession:
 
         mock_client = MagicMock()
         # Simulates an expired or revoked OAuth token.
-        mock_client.get_full_name.side_effect = Exception("401 Unauthorized")
+        mock_client.connectapi.side_effect = Exception("401 Unauthorized")
 
         result = auth._try_load_session(mock_client)
 
         assert result is False
 
-    def test_returns_false_when_garth_load_raises(self, tmp_path):
-        """Returns False even when garth.load() itself raises (corrupted file etc.)."""
+    def test_returns_false_when_token_load_raises(self, tmp_path):
+        """Returns False even when client.load() itself raises (corrupted file etc.)."""
         session_file = tmp_path / "session.json"
         session_file.write_text("not valid json")
 
@@ -134,7 +136,7 @@ class TestTryLoadSession:
         auth = GarminAuth(config)
 
         mock_client = MagicMock()
-        mock_client.garth.load.side_effect = ValueError("cannot deserialise token")
+        mock_client.client.load.side_effect = ValueError("cannot deserialise token")
 
         result = auth._try_load_session(mock_client)
 
@@ -249,7 +251,7 @@ class TestSaveSession:
 
         auth._save_session(mock_client)
 
-        mock_client.garth.dump.assert_called_once_with(str(session_file))
+        mock_client.client.dump.assert_called_once_with(str(session_file))
 
     def test_creates_missing_parent_directories(self, tmp_path):
         """Parent directories are created automatically (important for Docker volumes)."""
@@ -271,7 +273,7 @@ class TestSaveSession:
         config = make_config(session_file_path=str(session_file))
         auth = GarminAuth(config)
         mock_client = MagicMock()
-        mock_client.garth.dump.side_effect = OSError("disk full")
+        mock_client.client.dump.side_effect = OSError("disk full")
 
         # Should complete without raising.
         auth._save_session(mock_client)

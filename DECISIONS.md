@@ -599,6 +599,8 @@ if sync_mode == "incremental" and self.cursor_field and latest_cursor:
 
 ## ADR-022 — Shared `retry_on_429` utility replaces duplicated retry loops
 
+
+
 **Status**: Accepted  
 **Step**: v0.1.1 (Bug fix — resolves KB-006)
 
@@ -637,3 +639,50 @@ wherever it is needed — there is no duplication of the magic numbers.
 - `_login_with_retry()` no longer logs "successful on attempt X/Y" because
   `retry_on_429` does not expose the attempt number to the caller.  The retry
   warning logs from `retry_on_429` itself are sufficient.
+
+---
+
+## ADR-023 — Session validation uses `connectapi("/userprofile-service/socialProfile")` instead of `get_full_name()`
+
+**Status**: Accepted  
+**Step**: v0.1.2 (Bug fix — resolves KB-012)
+
+### Context
+`_try_load_session()` needed a "cheap" network call to confirm the restored OAuth
+token was still valid. The original choice was `client.get_full_name()`. In
+`garminconnect` 0.3.x, `get_full_name()` only returns the cached `self.full_name`
+attribute — it makes no network call and never raises. Calling it after
+`client.client.load(path)` always returned `None` silently, so every restored
+session was considered valid regardless of token state. Worse, `display_name`
+(a separate attribute) remained `None`, causing `get_user_summary()` to fail via
+`_require_display_name()` with no error surfaced to the user.
+
+### Decision
+Replace `client.get_full_name()` with:
+
+```python
+profile = client.connectapi("/userprofile-service/socialProfile")
+client.display_name = profile.get("displayName", client.username)
+client.full_name = profile.get("fullName")
+```
+
+### Reasons
+1. **Real network validation** — `connectapi()` makes an actual HTTPS request; an
+   expired or revoked token raises an exception that `_try_load_session()` catches
+   and converts to `return False`.
+2. **Profile initialisation** — the social profile response sets `display_name` and
+   `full_name` in one call, matching exactly what the full SSO login flow does.
+   All subsequent endpoints that call `_require_display_name()` (e.g.
+   `get_user_summary()`) will work correctly after a session restore.
+3. **Single source of truth** — the social profile endpoint is already what
+   `garminconnect` uses internally after a successful login; using the same endpoint
+   in session restore ensures both paths produce an identically-initialised client.
+
+### Trade-offs
+- One extra API call per session restore (previously zero calls in the load path).
+  The cost is negligible: session restore happens at most once per connector run,
+  and the call is lighter than a full activity or health fetch.
+- The `/userprofile-service/socialProfile` endpoint path is not part of the public
+  `garminconnect` API surface. If Garmin changes this URL, `_try_load_session()`
+  will return `False` on every run (triggering a fresh SSO login) — a graceful
+  degradation rather than a crash.

@@ -202,16 +202,15 @@ class TestDiscover:
     def test_all_three_streams_present(self, config_path):
         """Catalog contains exactly the three expected streams."""
         result = SourceGarmin().discover(config_path)
-        names = {s["stream"]["name"] for s in result["catalog"]["streams"]}
+        # get_catalog_entry() returns stream dicts directly (no "stream" wrapper).
+        names = {s["name"] for s in result["catalog"]["streams"]}
         assert names == self._EXPECTED_STREAMS
 
     def test_activities_supports_incremental(self, config_path):
         """activities stream declares incremental sync mode."""
         result = SourceGarmin().discover(config_path)
         activities = next(
-            s["stream"]
-            for s in result["catalog"]["streams"]
-            if s["stream"]["name"] == "activities"
+            s for s in result["catalog"]["streams"] if s["name"] == "activities"
         )
         assert "incremental" in activities["supported_sync_modes"]
         assert activities["source_defined_cursor"] is True
@@ -220,9 +219,7 @@ class TestDiscover:
         """calendar_events stream supports full_refresh only, no cursor."""
         result = SourceGarmin().discover(config_path)
         cal = next(
-            s["stream"]
-            for s in result["catalog"]["streams"]
-            if s["stream"]["name"] == "calendar_events"
+            s for s in result["catalog"]["streams"] if s["name"] == "calendar_events"
         )
         assert cal["supported_sync_modes"] == ["full_refresh"]
         assert cal["source_defined_cursor"] is False
