@@ -196,8 +196,9 @@ class GarminStream(ABC):
 
         logger.info("Stream '{}' emitted {} record(s).", self.name, record_count)
 
-        # Emit STATE so Airbyte knows where to resume on the next incremental run.
-        if self.cursor_field and latest_cursor:
+        # STATE is only meaningful in incremental mode — full_refresh replaces
+        # the destination table entirely and Airbyte discards any saved state.
+        if sync_mode == "incremental" and self.cursor_field and latest_cursor:
             yield self._make_state_message({self.cursor_field: latest_cursor})
 
     # ------------------------------------------------------------------

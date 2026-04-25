@@ -144,18 +144,18 @@ Runtime dependencies live in `requirements.txt`; test/dev tools live in
 
 ---
 
-## ADR-007 — `calendar.py` renamed to `calendar_events.py` (pending)
+## ADR-007 — `calendar.py` renamed to `calendar_events.py`
 
-**Status**: Pending  
-**Step**: 11 (Calendar events stream)
+**Status**: Accepted  
+**Step**: 12 (Bug fixes) — supersedes the pending note from Step 11
 
 ### Context
 The scaffolded file is `source_garmin/streams/calendar.py` but CLAUDE.md specifies
-`calendar_events.py`. See KNOWN_BUGS.md → KB-001.
+`calendar_events.py`. The name `calendar` also shadows Python's built-in `calendar`
+standard-library module. See KNOWN_BUGS.md → KB-001.
 
 ### Decision
-The file will be renamed (not patched) when implementing the calendar events stream
-in Step 11.
+Renamed via `git mv` in Step 12. Imports updated in `source.py` and `test_streams.py`.
 
 ---
 
@@ -547,3 +547,50 @@ implementations).
   improvement could make this configurable via `ConnectorConfig`.
 - Week iteration means up to ~55 API calls per sync (52 weeks + partial weeks
   at boundaries). This is acceptable for the current use case.
+
+---
+
+## ADR-021 — STATE message is only emitted in incremental sync mode
+
+**Status**: Accepted  
+**Step**: 12 (Bug fixes — supersedes the undecided behaviour documented in KB-008)
+
+### Context
+`GarminStream.read()` tracks the highest cursor value seen across all records and
+emits a STATE message at the end of the run. In the original implementation the
+guard was:
+
+```python
+if self.cursor_field and latest_cursor:
+    yield self._make_state_message(...)
+```
+
+This emitted STATE even during `full_refresh` runs. A `full_refresh` sync causes
+Airbyte to truncate and reload the destination table — the destination ignores any
+saved state and the next run always starts from scratch. Emitting STATE in
+`full_refresh` was therefore technically harmless but created misleading output and
+caused a unit test to need a comment justifying unexpected behaviour.
+
+### Decision
+Guard the STATE emit with an additional `sync_mode == "incremental"` check:
+
+```python
+if sync_mode == "incremental" and self.cursor_field and latest_cursor:
+    yield self._make_state_message(...)
+```
+
+### Reasons
+1. **Protocol correctness** — the Airbyte protocol does not forbid STATE in
+   full\_refresh, but emitting it implies the destination should use it, which is
+   misleading given that full\_refresh discards state by definition.
+2. **Test hygiene** — the original test for `test_no_state_emitted_for_full_refresh`
+   could not assert `state_msgs == []` and instead only asserted that records exist,
+   with a comment documenting the unexpected behaviour. The fix allows a clean,
+   direct assertion.
+3. **Consistency** — `CalendarEventsStream` has no cursor and never emits STATE.
+   `ActivitiesStream` and `DailyHealthStream` should behave analogously when run in
+   full\_refresh mode.
+
+### Trade-offs
+- None: the change is strictly narrowing (fewer messages emitted), compatible with
+  all Airbyte destination connectors, and covered by the updated unit test.

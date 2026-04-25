@@ -6,7 +6,9 @@
       "Bash(.venv/bin/pip install *)",
       "Bash(.venv/bin/python -m pytest unit_tests/ -v)",
       "Bash(python -m pytest unit_tests/ -v --tb=short)",
-      "Bash(python3 -m pytest unit_tests/ -v --tb=short)"
+      "Bash(python3 -m pytest unit_tests/ -v --tb=short)",
+      "Bash(git mv *)",
+      "Bash(docker build *)"
     ]
   }
 }

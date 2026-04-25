@@ -22,7 +22,7 @@ from source_garmin.auth import GarminAuth
 from source_garmin.config import ConnectorConfig, load_config
 from source_garmin.streams.activities import ActivitiesStream
 from source_garmin.streams.base import GarminStream
-from source_garmin.streams.calendar import CalendarEventsStream
+from source_garmin.streams.calendar_events import CalendarEventsStream
 from source_garmin.streams.daily_health import DailyHealthStream
 
 

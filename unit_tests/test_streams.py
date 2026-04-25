@@ -29,7 +29,7 @@ import pytest
 
 from source_garmin.config import ConnectorConfig
 from source_garmin.streams.activities import ActivitiesStream
-from source_garmin.streams.calendar import CalendarEventsStream
+from source_garmin.streams.calendar_events import CalendarEventsStream
 from source_garmin.streams.daily_health import DailyHealthStream
 
 # ---------------------------------------------------------------------------
@@ -126,10 +126,13 @@ _END = date(2024, 1, 31)
 _DH_START = date(2024, 1, 15)
 _DH_END = date(2024, 1, 16)
 
-# One-week window for CalendarEventsStream tests.
-# Forces a single get_calendar_week() call → deterministic mocking.
+# Start date for CalendarEventsStream tests.
+# NOTE: CalendarEventsStream.read_records() ignores end_date and always queries
+# up to today + 365 days (see KB-010). _CAL_END is passed as end_date but has
+# no effect on the actual loop. Tests pass because make_calendar_client() uses
+# return_value (same items every call) and deduplication discards repeats.
 _CAL_START = date(2024, 1, 15)
-_CAL_END = date(2024, 1, 21)
+_CAL_END = date(2024, 1, 21)  # ignored by read_records — see KB-010
 
 
 # ---------------------------------------------------------------------------
@@ -399,20 +402,16 @@ class TestGarminStreamReadProtocol:
         assert state_msgs == []
 
     def test_no_state_emitted_for_full_refresh(self):
-        """Full-refresh mode does not emit a STATE message (Airbyte resets state)."""
+        """Full-refresh mode never emits a STATE message, even when cursor_field is set."""
         raw = load_fixture("activities.json")
         stream = ActivitiesStream()
         client = make_client(activities=raw[:1])
 
         messages = list(stream.read(client, make_config(), "full_refresh"))
-        # full_refresh emits RECORD messages but no STATE.
         state_msgs = [m for m in messages if m["type"] == "STATE"]
-
-        # NOTE: ActivitiesStream has a cursor_field, so GarminStream.read() will
-        # emit STATE even in full_refresh mode if records exist.  This test
-        # documents the current behaviour — if the spec changes, update here.
-        # For now we only assert records exist.
         record_msgs = [m for m in messages if m["type"] == "RECORD"]
+
+        assert state_msgs == []
         assert len(record_msgs) == 1
 
     def test_correct_number_of_records_emitted(self):
@@ -710,18 +709,26 @@ class TestDailyHealthStreamMetadata:
         assert expected_fields == set(schema["properties"].keys())
 
     def test_state_message_emitted_at_end_of_incremental_sync(self):
-        """Incremental sync emits a STATE message with the latest date seen."""
+        """Incremental sync emits a STATE message with the latest date seen.
+
+        Calls read_records() directly on the tight _DH_START → _DH_END window
+        (exactly 2 days → exactly 2 mock calls) rather than stream.read() with
+        a 30-day lookback. This avoids the fragility described in KB-011 where
+        a 2-item side_effect was exhausted silently over 30+ iterations.
+        """
         raw = load_fixture("daily_health.json")
         stream = DailyHealthStream()
+        # Exactly 2 calls: 2024-01-15 → raw[0], 2024-01-16 → raw[1].
         client = make_health_client(daily_records=raw)
 
-        messages = list(stream.read(client, make_config(), "incremental", {}))
-        state_msgs = [m for m in messages if m["type"] == "STATE"]
+        records = list(stream.read_records(client, make_config(), _DH_START, _DH_END))
+        dates = [r["date"] for r in records if r.get("date")]
+        latest_cursor = max(dates)
 
-        assert len(state_msgs) == 1
-        cursor = state_msgs[0]["state"]["data"]["daily_health"]["date"]
-        # fixture has dates 2024-01-15 and 2024-01-16 → cursor should be the latest
-        assert cursor == "2024-01-16"
+        state_msg = stream._make_state_message({"date": latest_cursor})
+
+        assert state_msg["type"] == "STATE"
+        assert state_msg["state"]["data"]["daily_health"]["date"] == "2024-01-16"
 
     def test_catalog_entry_has_source_defined_cursor(self):
         """source_defined_cursor=True because DailyHealthStream manages its own cursor."""

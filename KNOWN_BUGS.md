@@ -9,7 +9,7 @@ nothing falls through the cracks across development steps.
 
 **Severity**: Low (build-time, not runtime)  
 **Introduced**: Initial scaffold  
-**Target fix**: ~~Step 11~~ — fix deferred; Step 11 implemented the stream but kept the wrong filename
+**Fixed**: Step 12 — `git mv` + import updates in `source.py` and `test_streams.py`
 
 ### Description
 The scaffolded file is `source_garmin/streams/calendar.py`, but CLAUDE.md specifies
@@ -184,7 +184,7 @@ checks the `activityType.typeKey` and reads the appropriate cadence field. For n
 
 **Severity**: Low (protocol inconsistency, no data loss)  
 **Introduced**: Step 4 (Base stream)  
-**Target fix**: Step 12 (Incremental state management review)
+**Fixed**: Step 12 — added `sync_mode == "incremental"` guard in `GarminStream.read()`; test tightened to assert `state_msgs == []`
 
 ### Description
 `GarminStream.read()` emits a `STATE` message whenever records are fetched and
@@ -249,7 +249,7 @@ developer environment concern only.
 
 **Severity**: Low (tests pass, but documentation is misleading)  
 **Introduced**: Step 11 (CalendarEventsStream + tests)  
-**Target fix**: Step 12 or cleanup pass
+**Fixed**: Step 12 — comment updated in `test_streams.py` to document the actual behavior; `_CAL_END` kept but annotated `# ignored by read_records — see KB-010`
 
 ### Description
 `CalendarEventsStream.read_records()` ignores the `end_date` argument from the base
@@ -291,7 +291,7 @@ Either:
 
 **Severity**: Low (test passes, but is fragile and impure)  
 **Introduced**: Step 11 (DailyHealthStream tests)  
-**Target fix**: Step 12 or cleanup pass
+**Fixed**: Step 12 — test rewritten to call `read_records()` directly on `_DH_START → _DH_END` (2 days, 2 mock calls) and build the STATE assertion manually
 
 ### Description
 `test_state_message_emitted_at_end_of_incremental_sync` calls `stream.read()` (the
