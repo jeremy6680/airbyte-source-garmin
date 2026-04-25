@@ -22,6 +22,8 @@ from source_garmin.auth import GarminAuth
 from source_garmin.config import ConnectorConfig, load_config
 from source_garmin.streams.activities import ActivitiesStream
 from source_garmin.streams.base import GarminStream
+from source_garmin.streams.calendar import CalendarEventsStream
+from source_garmin.streams.daily_health import DailyHealthStream
 
 
 class SourceGarmin:
@@ -33,8 +35,10 @@ class SourceGarmin:
       - Build CATALOG / CONNECTION_STATUS messages from stream metadata
       - Drive the read loop for each stream listed in the configured catalog
 
-    Streams currently registered (expanded in Steps 10-11):
-      - activities  (FULL_REFRESH + INCREMENTAL)
+    Registered streams:
+      - activities      (FULL_REFRESH + INCREMENTAL, cursor: activity_date)
+      - daily_health    (FULL_REFRESH + INCREMENTAL, cursor: date)
+      - calendar_events (FULL_REFRESH only)
     """
 
     def streams(self) -> List[GarminStream]:
@@ -48,8 +52,8 @@ class SourceGarmin:
         """
         return [
             ActivitiesStream(),
-            # DailyHealthStream(),    ← added in Step 10
-            # CalendarEventsStream(), ← added in Step 11
+            DailyHealthStream(),
+            CalendarEventsStream(),
         ]
 
     # ------------------------------------------------------------------

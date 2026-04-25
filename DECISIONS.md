@@ -477,3 +477,73 @@ transformation logic — `_normalize_raw()`, `_transform()`, `_check_hr()`,
 - If `garminconnect.Garmin`'s interface changes (e.g. a renamed method), the mock
   will silently continue to pass. Integration tests (Step 9+) are the backstop
   for this class of regression.
+
+---
+
+## ADR-019 — DailyHealthStream: one API call per day (get_user_summary)
+
+**Status**: Accepted  
+**Step**: 10 (DailyHealthStream)
+
+### Context
+Garmin health data (steps, sleep, stress, body battery, HRV) comes from several
+underlying sensors and is aggregated into a per-day summary. The `garminconnect`
+library does not expose a single batch endpoint that returns all these fields for
+a date range in one call.
+
+### Decision
+Call `client.get_user_summary(date)` once per calendar day in the fetch window.
+The response includes all required fields plus the nested `lastNight` object
+(sleep data), which `_normalize_raw()` flattens before loading into pandas.
+
+### Reasons
+1. **Single call, complete data** — `get_user_summary` returns all required
+   fields in one response, avoiding the complexity of joining separate sleep,
+   stress, and steps endpoints.
+2. **Graceful partial failures** — a failed call for a single day is logged
+   as a warning and skipped rather than aborting the whole stream. Days where
+   the user did not sync their watch (common) return a 404 from Garmin.
+3. **Testable** — mocking `get_user_summary` with `side_effect=[item1, item2]`
+   makes per-day sequential assertions clean and deterministic.
+
+### Trade-offs
+- For a 30-day lookback, this makes 30 sequential API calls. Garmin does not
+  appear to rate-limit this endpoint as aggressively as the login endpoint, but
+  a future optimisation could batch calls if needed.
+
+---
+
+## ADR-020 — CalendarEventsStream: ISO week iteration with forward-looking window
+
+**Status**: Accepted  
+**Step**: 11 (CalendarEventsStream)
+
+### Context
+The Garmin calendar API exposes a week-granularity endpoint
+(`get_calendar_week(year, week)`) with no batch or date-range variant.
+Calendar events represent upcoming races and training events — querying only
+the past `lookback_days` would miss future events that exist in the user's
+calendar at sync time.
+
+### Decision
+Iterate over ISO weeks from `start_date` to `today + 365 days`, overriding the
+base class `end_date` inside `read_records()`. A `set` of seen event IDs
+deduplicates events that appear in two consecutive week responses (can happen
+when an event falls on a week boundary — e.g. a Sunday event appears in both
+the ISO week that ends on that Sunday and the next week's response in some API
+implementations).
+
+### Reasons
+1. **Forward-looking window** — races are registered months in advance. A
+   365-day forward window ensures they are captured on every FULL_REFRESH sync.
+2. **FULL_REFRESH only** — calendar events are mutable (can be cancelled,
+   renamed, rescheduled). Re-fetching everything on every sync is the safest
+   approach; incremental state would risk silently missing changes.
+3. **Deduplication via set** — O(1) lookup, negligible overhead for typical
+   calendar sizes (tens of events per year).
+
+### Trade-offs
+- The 365-day forward window is hardcoded (`_FORWARD_DAYS = 365`). A future
+  improvement could make this configurable via `ConnectorConfig`.
+- Week iteration means up to ~55 API calls per sync (52 weeks + partial weeks
+  at boundaries). This is acceptable for the current use case.
